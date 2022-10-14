@@ -62,7 +62,5 @@ async def on_message(message):
         await clients[message.guild].resume(message)
 
 
-
-
 if __name__ == "__main__":
     application.run(TOKEN)
