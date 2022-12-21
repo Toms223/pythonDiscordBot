@@ -10,7 +10,9 @@ class Bot:
         self.client = client
         self.channel = None
         self.voice = None
-        self.queue: list[YouTube] = []
+        self.queue: list[str] = []
+        self.loop = False
+        self.index = 0
 
     async def join(self, message):
         text_channel = message.channel
@@ -40,12 +42,16 @@ class Bot:
         try:
             song = YouTube(link)
         except:
-            song = search(link)
+            try:
+                song = search(link)
+            except:
+                print("Song doesn't exist")
+                return
         await text_channel.send("**Successfully added: **" + "`" + song.title + "`" + "** to queue.**")
-        self.queue.append(song)
+        self.queue.append(song.watch_url)
         if self.voice is None:
             await self.join(message)
-            await self.music_play(message)
+            await self.music_play(message, self.index)
 
     async def pause(self, message):
         text_channel = message.channel
@@ -68,29 +74,50 @@ class Bot:
 
     async def list_play(self, message, link):
         text_channel = message.channel
-        playlist = Playlist(link).videos
+        playlist = Playlist(link).video_urls
         await text_channel.send(f"Added **{len(playlist)}** songs to the queue.")
         if self.voice is None:
             self.queue.extend(playlist)
             await self.join(message)
-            await self.music_play(message)
+            await self.music_play(message, 0)
         else:
             self.queue.extend(playlist)
 
-    async def music_play(self, message):
+    async def set_loop(self, message):
+        self.loop = not self.loop
         text_channel = message.channel
-        song = self.queue[0]
+        if self.loop:
+            await text_channel.send(f"Queue is now **looping**.")
+        else:
+            for i in range(0, self.index):
+                self.queue.pop(i)
+            self.index = 0
+            await text_channel.send(f"Queue is no longer **looping**.")
+
+    async def music_play(self, message, index):
+        text_channel = message.channel
+        link = self.queue[index]
+        song = YouTube(link)
         file = song.streams.filter(only_audio=True).first().download("tmp")
         await text_channel.send("**Now playing: ** \n" + "`" + song.title + "`")
-        self.voice.play(FFmpegOpusAudio(file), after=lambda e: self.next(message, file))
+        self.voice.play(FFmpegOpusAudio(file), after=lambda e: self.next(message, index))
 
-    def next(self, message, file):
+    def next(self, message, index):
         try:
             print(len(self.queue))
             if len(self.queue) > 1:
-                self.queue.pop(0)
-                fut = asyncio.run_coroutine_threadsafe(self.music_play(message), self.client.loop)
-                fut.result()
+                if self.loop:
+                    if index == len(self.queue) - 1:
+                        index = 0
+                    else:
+                        index += 1
+                    self.index = index
+                    fut = asyncio.run_coroutine_threadsafe(self.music_play(message, index), self.client.loop)
+                    fut.result()
+                else:
+                    self.queue.pop(0)
+                    fut = asyncio.run_coroutine_threadsafe(self.music_play(message, 0), self.client.loop)
+                    fut.result()
             else:
                 fut = asyncio.run_coroutine_threadsafe(self.leave(message), self.client.loop)
                 fut.result()
@@ -104,16 +131,18 @@ class Bot:
             max_range = 9
         else:
             max_range = len(self.queue)
-        for i in range(1, max_range):
-            string = string + "\n" + str(i) + "." + self.queue[i].title
+        for i in range(self.index + 1, max_range):
+            song = YouTube(self.queue[i]).title
+            string = string + "\n" + str(i) + "." + song
         embed = Embed(title="🎶 Currently in queue: 🎶", colour=0x2cf267)
-        embed.add_field(name=f"Currently playing: 🎧 {self.queue[0].title} 🎧", value=string, inline=False)
+        embed.add_field(name=f"Currently playing: 🎧 {YouTube(self.queue[self.index]).title} 🎧", value=string, inline=False)
         await text_channel.send(embed=embed)
 
     async def skip(self, message):
         text_channel = message.channel
         self.voice.stop()
-        await text_channel.send(f"**Skipped {self.queue[0].title} successfully!**")
+        song = YouTube(self.queue[self.index]).title
+        await text_channel.send(f"**Skipped {song} successfully!**")
 
 
 def search(query) -> YouTube:

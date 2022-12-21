@@ -61,6 +61,10 @@ async def on_message(message):
     if ".resume" == parsed[0]:
         await clients[message.guild].resume(message)
 
+    if ".loop" == parsed[0]:
+        await clients[message.guild].set_loop(message)
+
+
 
 if __name__ == "__main__":
     application.run(TOKEN)
